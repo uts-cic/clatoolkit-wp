@@ -1,2 +1,2 @@
-# WIP API Plugin
-Will expose an endpoint to read content from a multisite WordPress network
+# CLA Toolkit WordPress Plugin
+This plugin allows you to connect a WordPress instance to the CLA Toolkit.
