@@ -22,7 +22,7 @@ add_action( 'rest_api_init', function () {
 	) );
 } );
 
-const POSTS_PER_PAGE = 10;
+const POSTS_PER_BLOG = 10;
 
 function get_recent_posts(WP_REST_Request $request) {
 
@@ -33,7 +33,10 @@ function get_recent_posts(WP_REST_Request $request) {
 
 	// If the page query exists, use it, otherwise default $page to 0
 	$page = isset($request['page']) ? $request['page'] : 0;
-	$offset = POSTS_PER_PAGE * $page;
+	$offset = POSTS_PER_BLOG * $page;
+
+	// Flag to indicate whether there are more pages
+	$more_pages = false;
 
 	// For each blog in the network
 	foreach( $sites as $site ){
@@ -41,13 +44,44 @@ function get_recent_posts(WP_REST_Request $request) {
 		switch_to_blog( $site->blog_id );
 
 		// Get posts
-		$blog_posts = get_posts(array("posts_per_page" => POSTS_PER_PAGE, "offset" => $offset));
+		$blog_posts = get_posts(array( "posts_per_page" => POSTS_PER_BLOG, "offset" => $offset, 'post_status' => 'publish'));
+		$num_posts = wp_count_posts()->publish;
 
-		// Get post comments
+		if ($num_posts > $offset + POSTS_PER_BLOG) $more_pages = true;
+
+		// Get post tags, comments and author
 		for ($i = 0; $i < count($blog_posts); $i++) {
-			$comments = get_comments(array("post_id" => $blog_posts[$i]->ID));
+			$postID = $blog_posts[$i]->ID;
 
-			$blog_posts[$i]->comments = $comments;
+			$tags = wp_get_post_tags($postID);
+
+			$blog_posts[$i]->tags = [];
+
+
+			foreach ($tags as $tag) {
+				$blog_posts[$i]->tags[] = [
+					"name" => $tag->name,
+					"slug" => $tag->slug
+				];
+			}
+
+			$comments = get_comments(array("post_id" => $postID));
+
+			if (count($comments) > 0) {
+				for ($j = 0; $j < count($comments); $j++) {
+					$comments[$j]->comment_guid = get_comment_guid($comments[$j]->comment_ID);
+				}
+
+				$blog_posts[$i]->comments = $comments;
+			}
+
+			$author = get_userdata($blog_posts[$i]->post_author);
+
+			$blog_posts[$i]->author = [];
+			$blog_posts[$i]->author["email"] = $author->user_email;
+			$blog_posts[$i]->author["nicename"] = $author->user_nicename;
+			$blog_posts[$i]->author["login"] = $author->user_login;
+
 		}
 
 		// Add the blog's posts to the posts object to return (if there are any)
@@ -59,7 +93,13 @@ function get_recent_posts(WP_REST_Request $request) {
 		restore_current_blog();
 	}
 
-	// Return all the posts to the user
-	return $posts;
+	// If there are more pages return the uri for the next page
+	if ($more_pages) {
+		$next_page = "//".$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI']."?page=".($page+1);
 
+		// Return all the posts to the user
+		return ["posts" => $posts, "next_page" => $next_page];
+	}
+
+	return ["posts" => $posts];
 }
