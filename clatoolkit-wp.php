@@ -5,7 +5,7 @@
  */
 /*
 Plugin Name: CLA Toolkit WP
-Plugin URI: https://github.com/uts-cic/wp-multisite-api
+Plugin URI: https://github.com/uts-cic/clatoolkit-wp
 Description: Plugin to connect WordPress with the CLA Toolkit
 Author: Tommaso Armstrong
 Version: 0.1
@@ -15,7 +15,14 @@ Author URI: https://tomma.so/
 add_action( 'rest_api_init', function () {
 	register_rest_route( 'clatoolkit-wp/v1', 'posts', array(
 		'methods' => 'GET',
-		'callback' => 'get_recent_posts',
+		'callback' => 'cla_get_recent_posts',
+		'permission_callback' => function () {
+			return current_user_can( 'edit_others_posts' );
+		}
+	) );
+	register_rest_route( 'clatoolkit-wp/v1', 'friendships', array(
+		'methods' => 'GET',
+		'callback' => 'cla_get_friendships',
 		'permission_callback' => function () {
 			return current_user_can( 'edit_others_posts' );
 		}
@@ -24,7 +31,7 @@ add_action( 'rest_api_init', function () {
 
 const POSTS_PER_BLOG = 10;
 
-function get_recent_posts(WP_REST_Request $request) {
+function cla_get_recent_posts(WP_REST_Request $request) {
 
 	// Get all blogs in the network
 	$sites = get_sites();
@@ -102,4 +109,33 @@ function get_recent_posts(WP_REST_Request $request) {
 	}
 
 	return ["posts" => $posts];
+}
+
+function cla_get_friendships (WP_REST_Request $request) {
+	// If BuddyPress is installed
+	if (function_exists('bp_is_active')) {
+		$users = get_users();
+		$result = [
+			"users" => [],
+			"friendships" => [],
+			"entities" => []
+		];
+		for ($i = 0; $i < count($users); $i++) {
+			$id = (string)$users[$i]->ID;
+
+			$friends = array_map("strval", friends_get_friend_user_ids($id));
+			$result["users"][] = $id;
+			$result["friendships"][$id] = $friends;
+			$result["entities"][$id] = [
+				"email" => $users[$i]->user_email,
+				"nicename" => $users[$i]->user_nicename,
+				"login" => $users[$i]->user_login
+			];
+		}
+
+		return $result;
+	}
+	else {
+		return new WP_REST_Response("ERROR: BuddyPress is not installed", 400);
+	}
 }
